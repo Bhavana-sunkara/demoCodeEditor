@@ -254,6 +254,8 @@ function MonacoEditorComponent() {
 		console.log("formData", formData);
 		if (retryBool) {
 			formData.append("retry", "true");
+		} else {
+			formData.append("retry", "false");
 		}
 		axios
 			.post(
