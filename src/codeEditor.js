@@ -242,7 +242,8 @@ function MonacoEditorComponent() {
 		accessToken,
 		firstIde,
 		secondIde,
-		monaco
+		monaco,
+		retryBool = false
 	) => {
 		console.log("content", content);
 		const formData = new FormData();
@@ -251,6 +252,9 @@ function MonacoEditorComponent() {
 		formData.append("modification", modRequest);
 		formData.append("storageID", "a1108558-0f2a-11ef-93f1-4a806d129948");
 		console.log("formData", formData);
+		if (retryBool) {
+			formData.append("retry", "true");
+		}
 		axios
 			.post(
 				"https://api.magnifio.io/actions/alpha/code-modification",
