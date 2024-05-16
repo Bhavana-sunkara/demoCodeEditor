@@ -1,9 +1,11 @@
 import React, { useReducer, useEffect, useState } from "react";
-import MonacoEditor from "react-monaco-editor";
+import MonacoEditor, { monaco } from "react-monaco-editor";
 import "./App.css";
+import axios from "axios";
 
 function MonacoEditorComponent() {
 	// TODO: Remove highlight when clicking on the same line(s)
+	//      - Currently the highlight works when selecting multiple lines and single lines
 	// TODO: Remove highlight when canceling comment
 	// TODO: add CSS for comment box
 	// TODO: Make total height of the editor fixed
@@ -11,11 +13,14 @@ function MonacoEditorComponent() {
 	// Add the props etc
 	// TODO: make apply changes box to submit the changes
 
-	// TODOS for me
-	// TODO: Add a button to submit the comment
-	// TODO: show changes and highlight the changes
 	const [firstEditorHeight, setFirstEditorHeight] = useState("100%");
 	const [secondEditorHeight, setSecondEditorHeight] = useState("0%");
+	const [modRequest, setModRequest] = useState("");
+	const [accessToken, setAccessToken] = useState("");
+	const [firstEditor, setFirstEditor] = useState(null);
+	const [secondEditor, setSecondEditor] = useState(null);
+
+	const [monacoRef, setMonacoRef] = useState(null);
 
 	const initialCode =
 		"import bs4 as bs\nimport urllib.request\nimport re\nimport nltk\nimport requests\n#from gensim.summarization import summarize\nfrom bs4 import BeautifulSoup\n\n\nurl = 'https://www.npr.org/2019/07/10/740387601/university-of-texas-austin-promises-free-tuition-for-low-income-students-in-2020'\ndef getText(url):\n\tpage = requests.get(url).text\n\t\n\t# Turn page into BeautifulSoup object to access HTML tags\n\tsoup = BeautifulSoup(page, features=\"lxml\")\n\n\t# Get headline\n\theadline = soup.find('h1').get_text()\n\n\t# Get text from all <p> tags.\n\tp_tags = soup.find_all('p')\n\t# Get the text from each of the “p” tags and strip surrounding whitespace.\n\tp_tags_text = [tag.get_text().strip() for tag in p_tags]\n\n\t# Filter out sentences that contain newline characters '\\n' or don't contain periods.\n\tsentence_list = [sentence for sentence in p_tags_text if not '\\n' in sentence]\n\tsentence_list = [sentence for sentence in sentence_list if '.' in sentence]\n\t# Combine list items into string.\n\tarticle = ' '.join(sentence_list)\n\treturn article";
@@ -43,12 +48,18 @@ function MonacoEditorComponent() {
 					splitIndex: null,
 					content: [],
 				};
+			case "CODE_MODIFIED":
+				return {
+					...state,
+					code: action.payload,
+				};
 			default:
 				return state;
 		}
 	};
 
 	const initialState = {
+		initContext: initialCode,
 		code: initialCode,
 		splitIndex: null,
 		showCommentBox: false, // Initial state for comment box visibility
@@ -56,10 +67,46 @@ function MonacoEditorComponent() {
 		content: [],
 	};
 
+	// TODO: Need to remove this in the final integration
+	useEffect(() => {
+		const data = {
+			email: "user@example.com",
+			fullNames: "Actual Full Name",
+			user: "Actual User",
+			pwd: "Actual Password",
+			method: "Actual Method",
+			accessToken: "Actual Access Token",
+			refreshToken: "Actual Refresh Token",
+			id_token: "Actual ID Token",
+		};
+
+		axios
+			.post("https://api.magnifio.io/auth/temp-sign-in", data, {
+				headers: {
+					"Content-Type": "application/json",
+				},
+			})
+			.then((response) => {
+				setAccessToken(response.data.jwt.access_token);
+			})
+			.catch((error) => {
+				console.error(
+					"Error:",
+					error.response ? error.response.data : error.message
+				);
+			});
+	}, []);
+
 	const [state, dispatch] = useReducer(editorReducer, initialState);
 
 	const editorDidMount = (editor, monaco, editorId) => {
 		editor.focus();
+		if (editorId === "first") {
+			setFirstEditor(editor);
+			setMonacoRef(monaco);
+		} else {
+			setSecondEditor(editor);
+		}
 
 		let startLineNumber = null;
 		let endLineNumber = null;
@@ -87,7 +134,8 @@ function MonacoEditorComponent() {
 							startLineNumber,
 							endLineNumber
 						);
-						console.log("from", fromLineNumber, "to", toLineNumber);
+						console.log("fromLineNumber", fromLineNumber);
+						console.log("toLineNumber", toLineNumber);
 						highlightedContent = [];
 						for (
 							let i = fromLineNumber - 1;
@@ -144,8 +192,6 @@ function MonacoEditorComponent() {
 					// Remove previous decorations
 					decorations = editor.deltaDecorations(decorations, []);
 					// Add new decoration for the selected lines
-					console.log(state.splitIndex, lineNumber);
-
 					decorations = editor.deltaDecorations(
 						[],
 						[
@@ -175,18 +221,169 @@ function MonacoEditorComponent() {
 							editorId === "second" ? lineNumber : lineNumber - 1,
 						editor: editor,
 					});
-					console.log("after dispatch", state.splitIndex, lineNumber);
 				}
 				initialState.content = [];
 				initialState.content = highlightedContent;
-				console.log("highlightedContent", highlightedContent);
-				console.log("state.content", state.content);
 			}
 		});
 	};
 
 	const onChange = (newValue, e) => {
 		dispatch({ type: "SET_CODE", payload: newValue });
+	};
+
+	const handleReqestChange = (event) => {
+		setModRequest(event.target.value);
+	};
+
+	const changeRequest = (
+		content,
+		code,
+		accessToken,
+		firstIde,
+		secondIde,
+		monaco
+	) => {
+		console.log("content", content);
+		const formData = new FormData();
+		formData.append("userID", "65b02df820411fa73b9e5b56");
+		formData.append("code_input", JSON.stringify(content));
+		formData.append("modification", modRequest);
+		formData.append("storageID", "a1108558-0f2a-11ef-93f1-4a806d129948");
+		console.log("formData", formData);
+		axios
+			.post(
+				"https://api.magnifio.io/actions/alpha/code-modification",
+				formData,
+				{
+					headers: {
+						"Content-Type": "multipart/form-data", // This will be set automatically with the correct boundary by Axios
+						Authorization: "Bearer " + accessToken,
+					},
+				}
+			)
+			.then((response) => {
+				console.log("Response:", response);
+				const context = response.data.context_output;
+				// TODO: Highlight the lines with the changes
+				// if we remove the second editor then lines are displaying but not on the right line number
+				// TODO: create button to accept changes
+				// make sure changes that the user has made are being noticed
+				const modified_lines = response.data.modified_lines;
+				dispatch({
+					type: "CODE_MODIFIED",
+					payload: context,
+				});
+
+				let firstIDEDecorations = [];
+				firstIDEDecorations = firstIde.deltaDecorations(
+					firstIDEDecorations,
+					[]
+				);
+
+				let secondIDEDecorations = [];
+				secondIDEDecorations = secondIde.deltaDecorations(
+					secondIDEDecorations,
+					[]
+				);
+
+				modified_lines.map((line_number) => {
+					console.log("line_number", line_number);
+				});
+
+				const newDecorationsFirstIDE = modified_lines.map(
+					(line_number) => {
+						// Log the current line number being processed
+						console.log(
+							"Highlighting line number first ide:",
+							line_number
+						);
+						try {
+							const lineLength = firstIde
+								.getModel()
+								.getLineContent(line_number).length;
+
+							return {
+								range: new monaco.Range(
+									line_number,
+									1,
+									line_number,
+									lineLength
+								),
+								options: {
+									isWholeLine: true,
+									className: "line-modification-highlight",
+								},
+							};
+						} catch (err) {
+							console.log("Error", err, line_number);
+						}
+					}
+				);
+
+				const newDecorationsSecondIDE = modified_lines.map(
+					(line_number) => {
+						// Log the current line number being processed
+						console.log(
+							"Highlighting line number second ide:",
+							line_number
+						);
+						try {
+							const lineLength = firstIde
+								.getModel()
+								.getLineContent(line_number).length;
+
+							return {
+								range: new monaco.Range(
+									line_number,
+									1,
+									line_number,
+									lineLength
+								),
+								options: {
+									isWholeLine: true,
+									className: "line-modification-highlight",
+								},
+							};
+						} catch (err) {
+							console.log("Error", err, line_number);
+						}
+					}
+				);
+				firstIDEDecorations = firstIde.deltaDecorations(
+					[],
+					newDecorationsFirstIDE
+				);
+				secondIDEDecorations = secondIde.deltaDecorations(
+					[],
+					newDecorationsSecondIDE
+				);
+			})
+			.catch((error) => {
+				console.error(
+					"Error:",
+					error.response ? error.response.data : error.message
+				);
+			});
+
+		// TODO: Issue with highlighting where its not highlighting the right lines
+		// You can test with the following code instead of waiting for a response
+		// editor.deltaDecorations([], []);
+		// const modified_lines = [11, 14, 22];
+		// const newDecorations = modified_lines.map((line_number) => {
+		// 	// Log the current line number being processed
+		// 	console.log("Highlighting line number:", line_number);
+
+		// 	return {
+		// 		range: new monaco.Range(line_number, 1, line_number, 0),
+		// 		options: {
+		// 			isWholeLine: true,
+		// 			className: "line-modification-highlight",
+		// 		},
+		// 	};
+		// });
+		// console.log("newDecorations", newDecorations);
+		// editor.deltaDecorations([], newDecorations);
 	};
 
 	const options = {
@@ -211,11 +408,6 @@ function MonacoEditorComponent() {
 			const estimatedLineHeight = 20; // Adjust this based on your CSS
 
 			const lineRemainder = totalLinesCount - lines;
-			console.log(
-				lines,
-				estimatedLineHeight,
-				`${lines * estimatedLineHeight}px`
-			);
 			setFirstEditorHeight(`${lines * estimatedLineHeight}px`);
 			setSecondEditorHeight(`${lineRemainder * estimatedLineHeight}px`);
 		} else {
@@ -254,6 +446,8 @@ function MonacoEditorComponent() {
 							padding: "8px",
 							boxSizing: "border-box",
 						}}
+						value={modRequest}
+						onChange={handleReqestChange}
 					/>
 					<div>
 						<button
@@ -263,7 +457,23 @@ function MonacoEditorComponent() {
 						>
 							Cancel
 						</button>
-						<button>Submit Comment</button>
+						<button
+							onClick={() => {
+								changeRequest(
+									state.content,
+									state.initContext,
+									accessToken,
+									firstEditor,
+									secondEditor,
+									monacoRef
+								);
+								dispatch({ type: "TOGGLE_COMMENT_BOX" });
+								// TODO: create a method to hide/unhide accept changes button
+								// TODO: create a method to hide/unhide retry button
+							}}
+						>
+							Submit Comment
+						</button>
 					</div>
 				</div>
 			)}
